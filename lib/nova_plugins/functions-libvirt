@@ -43,7 +43,15 @@ function install_libvirt {
         # everything has been merged into qemu-system-x86) to bring in
         # the right packages. see
         # https://bugzilla.redhat.com/show_bug.cgi?id=1235890
-        install_package qemu-kvm
+	if is_suse; then
+	    uninstall_package qemu-kvm
+            install_package kvm
+	    if ! is_package_installed kvm; then
+	        install_package qemu-kvm
+	    fi
+	else 
+            install_package qemu-kvm
+	fi
         install_package libvirt libvirt-devel
         pip_install_gr libvirt-python
     fi
