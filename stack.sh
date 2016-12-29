@@ -192,7 +192,7 @@ source $TOP_DIR/stackrc
 
 # Warn users who aren't on an explicitly supported distro, but allow them to
 # override check and attempt installation with ``FORCE=yes ./stack``
-if [[ ! ${DISTRO} =~ (trusty|xenial|yakkety|7.0|wheezy|sid|testing|jessie|f23|f24|rhel7|kvmibm1) ]]; then
+if [[ ! ${DISTRO} =~ (trusty|xenial|yakkety|7.0|wheezy|sid|testing|jessie|f23|f24|f25|rhel7|kvmibm1) ]]; then
     echo "WARNING: this script has not been tested on $DISTRO"
     if [[ "$FORCE" != "yes" ]]; then
         die $LINENO "If you wish to run this script anyway run with FORCE=yes"
@@ -572,7 +572,6 @@ source $TOP_DIR/lib/nova
 source $TOP_DIR/lib/placement
 source $TOP_DIR/lib/cinder
 source $TOP_DIR/lib/swift
-source $TOP_DIR/lib/heat
 source $TOP_DIR/lib/neutron
 source $TOP_DIR/lib/neutron-legacy
 source $TOP_DIR/lib/ldap
@@ -800,9 +799,6 @@ fi
 if is_service_enabled neutron nova horizon; then
     install_neutronclient
 fi
-if is_service_enabled heat horizon; then
-    install_heatclient
-fi
 
 # Install shared libraries
 if is_service_enabled cinder nova; then
@@ -873,18 +869,21 @@ if is_service_enabled placement; then
     configure_placement
 fi
 
+# create a placement-client fake service to know we need to configure
+# placement connectivity. We configure the placement service for nova
+# if placement-api or placement-client is active, and n-cpu on the
+# same box.
+if is_service_enabled placement placement-client; then
+    if is_service_enabled n-cpu; then
+        configure_placement_nova_compute
+    fi
+fi
+
 if is_service_enabled horizon; then
     # django openstack_auth
     install_django_openstack_auth
     # dashboard
     stack_install_service horizon
-fi
-
-if is_service_enabled heat; then
-    stack_install_service heat
-    install_heat_other
-    cleanup_heat
-    configure_heat
 fi
 
 if is_service_enabled tls-proxy || [ "$USE_SSL" == "True" ]; then
@@ -1071,10 +1070,6 @@ if is_service_enabled keystone; then
 
     if is_service_enabled swift; then
         create_swift_accounts
-    fi
-
-    if is_service_enabled heat; then
-        create_heat_accounts
     fi
 
 fi
@@ -1269,7 +1264,10 @@ if is_service_enabled neutron; then
     start_neutron
 fi
 # Once neutron agents are started setup initial network elements
-create_neutron_initial_network
+if is_service_enabled q-svc && [[ "$NEUTRON_CREATE_INITIAL_NETWORKS" == "True" ]]; then
+    echo_summary "Creating initial neutron network elements"
+    create_neutron_initial_network
+fi
 
 if is_service_enabled nova; then
     echo_summary "Starting Nova"
@@ -1286,18 +1284,6 @@ if is_service_enabled cinder; then
     create_volume_types
 fi
 
-# Configure and launch Heat engine, api and metadata
-if is_service_enabled heat; then
-    # Initialize heat
-    echo_summary "Configuring Heat"
-    init_heat
-    echo_summary "Starting Heat"
-    start_heat
-    if [ "$HEAT_BUILD_PIP_MIRROR" = "True" ]; then
-        echo_summary "Building Heat pip mirror"
-        build_heat_pip_mirror
-    fi
-fi
 
 if is_service_enabled horizon; then
     echo_summary "Starting Horizon"
@@ -1382,8 +1368,16 @@ check_libs_from_git
 # ----------------------
 
 # Do this late because it requires compute hosts to have started
-if is_service_enabled n-api && [ "$NOVA_CONFIGURE_CELLSV2" == "True" ]; then
-    create_cell
+if is_service_enabled n-api; then
+    if is_service_enabled n-cpu; then
+        create_cell
+    else
+        # Some CI systems like Hyper-V build the control plane on
+        # Linux, and join in non Linux Computes after setup. This
+        # allows them to delay the processing until after their whole
+        # environment is up.
+        echo_summary "SKIPPING Cell setup because n-cpu is not enabled. You will have to do this manually before you have a working environment."
+    fi
 fi
 
 # Bash completion
@@ -1408,6 +1402,9 @@ fi
 # Phase: test-config
 run_phase stack test-config
 
+# Apply late configuration from ``local.conf`` if it exists for layer 2 services
+# Phase: test-config
+merge_config_group $TOP_DIR/local.conf test-config
 
 # Fin
 # ===

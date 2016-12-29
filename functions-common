@@ -534,10 +534,8 @@ function git_clone {
                 echo "the project to the \$PROJECTS variable in the job definition."
                 die $LINENO "Cloning not allowed in this configuration"
             fi
-            git_timed clone $git_clone_flags $git_remote $git_dest
-            cd $git_dest
-            # This checkout syntax works for both branches and tags
-            git checkout $git_ref
+            # '--branch' can also take tags
+            git_timed clone $git_clone_flags $git_remote $git_dest --branch $git_ref
         elif [[ "$RECLONE" = "True" ]]; then
             # if it does exist then simulate what clone does if asked to RECLONE
             cd $git_dest
@@ -1680,7 +1678,7 @@ function tail_log {
     local logfile=$2
 
     if [[ "$USE_SCREEN" = "True" ]]; then
-        screen_process "$name" "sudo tail -f $logfile | sed 's/\\\\\\\\x1b/\o033/g'"
+        screen_process "$name" "sudo tail -f $logfile | sed -u 's/\\\\\\\\x1b/\o033/g'"
     fi
 }
 
@@ -1773,6 +1771,9 @@ function enable_plugin {
     local name=$1
     local url=$2
     local branch=${3:-master}
+    if [[ ",${DEVSTACK_PLUGINS}," =~ ,${name}, ]]; then
+        die $LINENO "Plugin attempted to be enabled twice: ${name} ${url} ${branch}"
+    fi
     DEVSTACK_PLUGINS+=",$name"
     GITREPO[$name]=$url
     GITDIR[$name]=$DEST/$name
@@ -2260,6 +2261,14 @@ function maskip {
     echo $subnet
 }
 
+function is_provider_network {
+    if [ "$Q_USE_PROVIDER_NETWORKING" == "True" ]; then
+        return 0
+    fi
+    return 1
+}
+
+
 # Return the current python as "python<major>.<minor>"
 function python_version {
     local python_version
@@ -2310,11 +2319,12 @@ function stop_service {
     fi
 }
 
-# Service wrapper to stop services
+# Service wrapper to reload services
+# If the service was not in running state it will start it
 # reload_service service-name
 function reload_service {
     if [ -x /bin/systemctl ]; then
-        sudo /bin/systemctl reload $1
+        sudo /bin/systemctl reload-or-restart $1
     else
         sudo service $1 reload
     fi

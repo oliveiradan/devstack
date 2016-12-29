@@ -44,20 +44,10 @@ KEYSTONE_REGION_NAME=${KEYSTONE_REGION_NAME:-$REGION_NAME}
 # Specify which services to launch.  These generally correspond to
 # screen tabs. To change the default list, use the ``enable_service`` and
 # ``disable_service`` functions in ``local.conf``.
-# For example, to enable Swift add this to ``local.conf``:
-#  enable_service s-proxy s-object s-container s-account
-# In order to enable Neutron (a single node setup) add the following
+# For example, to enable Swift as part of DevStack add the following
 # settings in ``local.conf``:
 #  [[local|localrc]]
-#  disable_service n-net
-#  enable_service q-svc
-#  enable_service q-agt
-#  enable_service q-dhcp
-#  enable_service q-l3
-#  enable_service q-meta
-#  # Optional, to enable tempest configuration as part of DevStack
-#  enable_service tempest
-
+#  enable_service s-proxy s-object s-container s-account
 # This allows us to pass ``ENABLED_SERVICES``
 if ! isset ENABLED_SERVICES ; then
     # Keystone - nothing works without keystone
@@ -158,7 +148,7 @@ else
 fi
 
 # Configure Identity API version: 2.0, 3
-IDENTITY_API_VERSION=${IDENTITY_API_VERSION:-2.0}
+IDENTITY_API_VERSION=${IDENTITY_API_VERSION:-3}
 
 # Set the option ENABLE_IDENTITY_V2 to True. It defines whether the DevStack
 # deployment will be deploying the Identity v2 pipelines. If this option is set
@@ -239,10 +229,6 @@ CINDER_BRANCH=${CINDER_BRANCH:-master}
 GLANCE_REPO=${GLANCE_REPO:-${GIT_BASE}/openstack/glance.git}
 GLANCE_BRANCH=${GLANCE_BRANCH:-master}
 
-# heat service
-HEAT_REPO=${HEAT_REPO:-${GIT_BASE}/openstack/heat.git}
-HEAT_BRANCH=${HEAT_BRANCH:-master}
-
 # django powered web control panel for openstack
 HORIZON_REPO=${HORIZON_REPO:-${GIT_BASE}/openstack/horizon.git}
 HORIZON_BRANCH=${HORIZON_BRANCH:-master}
@@ -300,10 +286,6 @@ GITBRANCH["python-brick-cinderclient-ext"]=${BRICK_CINDERCLIENT_BRANCH:-master}
 # python glance client library
 GITREPO["python-glanceclient"]=${GLANCECLIENT_REPO:-${GIT_BASE}/openstack/python-glanceclient.git}
 GITBRANCH["python-glanceclient"]=${GLANCECLIENT_BRANCH:-master}
-
-# python heat client library
-GITREPO["python-heatclient"]=${HEATCLIENT_REPO:-${GIT_BASE}/openstack/python-heatclient.git}
-GITBRANCH["python-heatclient"]=${HEATCLIENT_BRANCH:-master}
 
 # ironic client
 GITREPO["python-ironicclient"]=${IRONICCLIENT_REPO:-${GIT_BASE}/openstack/python-ironicclient.git}
@@ -836,6 +818,10 @@ GIT_DEPTH=${GIT_DEPTH:-0}
 
 # Use native SSL for servers in ``SSL_ENABLED_SERVICES``
 USE_SSL=$(trueorfalse False USE_SSL)
+
+# We may not need to recreate database in case 2 Keystone services
+# sharing the same database. It would be useful for multinode Grenade tests.
+RECREATE_KEYSTONE_DB=$(trueorfalse True RECREATE_KEYSTONE_DB)
 
 # ebtables is inherently racey. If you run it by two or more processes
 # simultaneously it will collide, badly, in the kernel and produce

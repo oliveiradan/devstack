@@ -153,6 +153,7 @@ function cleanup_keystone {
 function _config_keystone_apache_wsgi {
     local keystone_apache_conf
     keystone_apache_conf=$(apache_site_config_for keystone)
+    keystone_ssl_listen="#"
     local keystone_ssl=""
     local keystone_certfile=""
     local keystone_keyfile=""
@@ -161,6 +162,7 @@ function _config_keystone_apache_wsgi {
     local venv_path=""
 
     if is_ssl_enabled_service key; then
+        keystone_ssl_listen=""
         keystone_ssl="SSLEngine On"
         keystone_certfile="SSLCertificateFile $KEYSTONE_SSL_CERT"
         keystone_keyfile="SSLCertificateKeyFile $KEYSTONE_SSL_KEY"
@@ -178,6 +180,7 @@ function _config_keystone_apache_wsgi {
         s|%PUBLICPORT%|$keystone_service_port|g;
         s|%ADMINPORT%|$keystone_auth_port|g;
         s|%APACHE_NAME%|$APACHE_NAME|g;
+        s|%SSLLISTEN%|$keystone_ssl_listen|g;
         s|%SSLENGINE%|$keystone_ssl|g;
         s|%SSLCERTFILE%|$keystone_certfile|g;
         s|%SSLKEYFILE%|$keystone_keyfile|g;
@@ -442,14 +445,16 @@ function create_keystone_accounts {
 #
 # create_service_user <name> [role]
 #
-# The role defaults to the service role. It is allowed to be provided as optional as historically
+# We always add the service role, other roles are also allowed to be added as historically
 # a lot of projects have configured themselves with the admin or other role here if they are
 # using this user for other purposes beyond simply auth_token middleware.
 function create_service_user {
-    local role=${2:-service}
-
     get_or_create_user "$1" "$SERVICE_PASSWORD" "$SERVICE_DOMAIN_NAME"
-    get_or_add_user_project_role "$role" "$1" "$SERVICE_PROJECT_NAME" "$SERVICE_DOMAIN_NAME" "$SERVICE_DOMAIN_NAME"
+    get_or_add_user_project_role service "$1" "$SERVICE_PROJECT_NAME" "$SERVICE_DOMAIN_NAME" "$SERVICE_DOMAIN_NAME"
+
+    if [[ -n "$2" ]]; then
+        get_or_add_user_project_role "$2" "$1" "$SERVICE_PROJECT_NAME" "$SERVICE_DOMAIN_NAME" "$SERVICE_DOMAIN_NAME"
+    fi
 }
 
 # Configure the service to use the auth token middleware.
@@ -485,8 +490,10 @@ function init_keystone {
         init_ldap
     fi
 
-    # (Re)create keystone database
-    recreate_database keystone
+    if [[ "$RECREATE_KEYSTONE_DB" == True ]]; then
+        # (Re)create keystone database
+        recreate_database keystone
+    fi
 
     # Initialize keystone database
     $KEYSTONE_BIN_DIR/keystone-manage --config-file $KEYSTONE_CONF db_sync

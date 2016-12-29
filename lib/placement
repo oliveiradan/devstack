@@ -47,7 +47,6 @@ fi
 # Public facing bits
 PLACEMENT_SERVICE_PROTOCOL=${PLACEMENT_SERVICE_PROTOCOL:-$SERVICE_PROTOCOL}
 PLACEMENT_SERVICE_HOST=${PLACEMENT_SERVICE_HOST:-$SERVICE_HOST}
-PLACEMENT_SERVICE_PORT=${PLACEMENT_SERVICE_PORT:-8778}
 
 # Functions
 # ---------
@@ -55,7 +54,7 @@ PLACEMENT_SERVICE_PORT=${PLACEMENT_SERVICE_PORT:-8778}
 # Test if any placement services are enabled
 # is_placement_enabled
 function is_placement_enabled {
-    [[ ,${ENABLED_SERVICES} =~ ,"placement-" ]] && return 0
+    [[ ,${ENABLED_SERVICES} =~ ,"placement-api" ]] && return 0
     return 1
 }
 
@@ -68,7 +67,6 @@ function cleanup_placement {
 # _config_placement_apache_wsgi() - Set WSGI config files
 function _config_placement_apache_wsgi {
     local placement_api_apache_conf
-    local placement_api_port=$PLACEMENT_SERVICE_PORT
     local venv_path=""
     local nova_bin_dir=""
     nova_bin_dir=$(get_python_exec_prefix)
@@ -89,7 +87,6 @@ function _config_placement_apache_wsgi {
 
     sudo cp $FILES/apache-placement-api.template $placement_api_apache_conf
     sudo sed -e "
-        s|%PUBLICPORT%|$placement_api_port|g;
         s|%APACHE_NAME%|$APACHE_NAME|g;
         s|%PUBLICWSGI%|$nova_bin_dir/nova-placement-api|g;
         s|%SSLENGINE%|$placement_ssl|g;
@@ -101,12 +98,7 @@ function _config_placement_apache_wsgi {
     " -i $placement_api_apache_conf
 }
 
-# configure_placement() - Set config files, create data dirs, etc
-function configure_placement {
-    if [ "$PLACEMENT_DB_ENABLED" != False ]; then
-        iniset $PLACEMENT_CONF placement_database connection `database_connection_url placement`
-    fi
-
+function configure_placement_nova_compute {
     iniset $NOVA_CONF placement auth_type "password"
     iniset $NOVA_CONF placement auth_url "$KEYSTONE_SERVICE_PROTOCOL://$KEYSTONE_SERVICE_HOST:$KEYSTONE_AUTH_PORT/v3"
     iniset $NOVA_CONF placement username placement
@@ -121,7 +113,13 @@ function configure_placement {
     # established by the nova api. This avoids, for the time, being,
     # creating redundant configuration items that are just used for
     # testing.
+}
 
+# configure_placement() - Set config files, create data dirs, etc
+function configure_placement {
+    if [ "$PLACEMENT_DB_ENABLED" != False ]; then
+        iniset $PLACEMENT_CONF placement_database connection `database_connection_url placement`
+    fi
     _config_placement_apache_wsgi
 }
 
@@ -160,10 +158,6 @@ function install_placement {
 
 # start_placement_api() - Start the API processes ahead of other things
 function start_placement_api {
-    # Get right service port for testing
-    local service_port=$PLACEMENT_SERVICE_PORT
-    local placement_api_port=$PLACEMENT_SERVICE_PORT
-
     enable_apache_site placement-api
     restart_apache_server
     tail_log placement-api /var/log/$APACHE_NAME/placement-api.log
